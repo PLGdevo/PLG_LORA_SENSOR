@@ -10,22 +10,27 @@ ModbusMaster sensor_1;
 ModbusMaster sensor_2;
 
 // define the pins used by the transceiver module
-#define ss 05               // Slave Select pin
-#define rst 04              // Reset pin
-#define dio0 14             // DIO0 pin
-                            // mosi, miso, sck are defined in the SPI library
-                            // for ESP32, the default pins are: mosi=23, miso=19, sck=18
-#define led_connected 26    // LED pin for connection status
-#define led_slave 33        // LED pin for master status
-#define led_master 25       // LED pin for slave status
-#define TX 17               // TX pin for RS485 module
-#define RX 16               // RX pin for RS485 module
+#define ss 05            // Slave Select pin
+#define rst 04           // Reset pin
+#define dio0 14          // DIO0 pin
+                         // mosi, miso, sck are defined in the SPI library
+                         // for ESP32, the default pins are: mosi=23, miso=19, sck=18
+#define led_connected 26 // LED pin for connection status
+#define led_slave 33     // LED pin for master status
+#define led_master 25    // LED pin for slave status
+#define TX 17            // TX pin for RS485 module
+#define RX 16            // RX pin for RS485 module
+#define ADC_PHdat 34
+String ID_control = "0";
+String ID_CB = "1";
+String ID_ = "2";
+String ID_master = "3";
 HardwareSerial mySerial(2); // Sử dụng UART2
 
 #define ID_SENSOR_1 1 // cam bien anh sang
 #define ID_SENSOR_2 2 // cam bien nhiet do |do am
 
-float temp, hum;
+float temp, hum, PH_dat;
 unsigned long lastTime = 0;
 uint8_t Com[8] = {0x01, 0x03, 0x00, 0x02, 0x00, 0x02, 0x65, 0xCB};
 float LUX;
@@ -135,10 +140,16 @@ void read_tem_hud()
   // Serial.print("Lux = ");
   // Serial.print(LUX, 3);
   // Serial.print(" (lux)");
-  Serial.print("[CB2] Nhiet do: ");
-  Serial.print(temp);
-  Serial.print(" C - Do am: ");
-  Serial.println(hum);
+}
+void sen_lora_data()
+{
+  // Example of sending sensor data
+  LoRa.beginPacket(); // Start a new packet
+  LoRa.print(messages_sensor);
+  LoRa.endPacket();               // Finish the packet and send it
+  digitalWrite(led_master, HIGH); // Turn off LED for slave status
+  delay(20);                      // Delay to ensure the message is sent
+  digitalWrite(led_master, LOW);  // Turn off LED for slave status
 }
 void sen_lora_data_4()
 {
@@ -152,22 +163,13 @@ void sen_lora_data_4()
 }
 void sen_data_cambien()
 {
-  // Example of sending sensor data
-  PLG_write_4("slave_sensor", "slave1", "temp", String(temp, 2));
+
+  PLG_write_board_sensor(ID_CB, "slave1", "all_CB", String(temp, 2), String(hum, 2), String(LUX, 2), String(PH_dat, 2));
+  sen_lora_data();
+  PLG_write_4(ID_CB, ID_master, "sensor", "end");
   sen_lora_data_4();
-  PLG_write_4("slave_sensor", "slave1", "hum", String(hum, 2));
-  sen_lora_data_4();
-  PLG_write_4("slave_sensor", "slave1", "lux", String(LUX, 2));
-  sen_lora_data_4();
-  // PLG_write_4("slave_sensor", "slave1", "ph_nuoc", String(ph_nuoc, 2));
-  // sen_lora_data_4();
-  // PLG_write_4("slave_sensor", "slave1", "ec_nuoc", String(ec_nuoc, 2));
-  // sen_lora_data_4();
-  // PLG_write_4("slave_sensor", "slave1", "ph_dat", String(ph_dat, 2));
-  // sen_lora_data_4();
-  PLG_write_4("slave_sensor", "slave1", "sensor", "end");
-  sen_lora_data_4();
-  // DEBUG_PRINTF("temp: %.2f   hum: %.2f   lux: %.2f   PH-dat: %.2f\n", temp, hum, lux, ph_dat);
+  DEBUG_PRINTF("temp: %.2f   hum: %.2f   lux: %.2f   PH-dat: %.2f\n", temp, hum, LUX, PH_dat);
+  // DEBUG_PRINTF("temp: %.2f   hum: %.2f   lux: %.2f   \n", temp, hum,LUX);
 }
 void setup()
 {
@@ -177,6 +179,7 @@ void setup()
   sensor_2.begin(ID_SENSOR_2, Serial2);    // Cảm biến địa chỉ 2
   mySerial.begin(9600);
   LoRa.setPins(ss, rst, dio0);
+  pinMode(ADC_PHdat, INPUT);
   pinMode(led_slave, OUTPUT);       // Set LED pin as output
   pinMode(led_master, OUTPUT);      // Set LED pin for master status
   pinMode(led_connected, OUTPUT);   // Set LED pin for connection status
@@ -189,18 +192,23 @@ void setup()
     Serial.print(".");
     delay(500);
   }
+  DEBUG_PRINTLN("PLG_RUN_SENSOR");
 }
-
+void read_PHdat()
+{
+  PH_dat = analogRead(ADC_PHdat); // Đọc giá trị từ chân ADC_PHdat
+  PH_dat = 10.0 - ((PH_dat / 4095.0) * 12.0);
+}
 void loop()
 {
 
   unsigned long currentTime = millis();
 
-  if (currentTime - lastTime >= 2000)
+  if (currentTime - lastTime >= 1500)
   {
-    // Gửi dữ liệu cảm biến mỗi 2 giây
     read_tem_hud();
     readLux();
+    read_PHdat();
     sen_data_cambien();
     lastTime = currentTime;
   }
